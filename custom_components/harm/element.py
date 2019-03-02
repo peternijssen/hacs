@@ -58,12 +58,20 @@ class Element(RestoreEntity):
     @property
     def installed_version(self):
         """installed_version."""
-        return self.data.get('installed_version')
+        location = 'local'
+        key = 'version'
+        data = self.hass.data[DOMAIN_DATA]
+        value = data.get(location, {}).get(self._name, {}).get(key)
+        return value
 
     @property
     def avaiable_version(self):
         """avaiable_version."""
-        return self.data.get('avaiable_version')
+        location = 'remote'
+        key = 'version'
+        data = self.hass.data[DOMAIN_DATA]
+        value = data.get(location, {}).get(self._name, {}).get(key)
+        return value
 
     @property
     def state(self):
