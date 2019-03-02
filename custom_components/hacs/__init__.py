@@ -21,8 +21,7 @@ from . const import (
     CUSTOM_UPDATER_WARNING, NAME_LONG, NAME_SHORT, DOMAIN_DATA,
     ELEMENT_TYPES, VERSION)
 from .element import Element
-from .remote import get_remote_data
-from .local import get_local_data
+from .data import get_remote_data
 
 
 DOMAIN = '{}'.format(NAME_SHORT.lower())
