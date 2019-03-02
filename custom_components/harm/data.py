@@ -3,7 +3,6 @@ import os
 from .cons import NAME_SHORT, ELEMENT_TYPES
 
 
-
 async def init_data_store(basedir):
     """Init data store."""
     name = NAME_SHORT.lower()

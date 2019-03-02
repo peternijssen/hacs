@@ -6,7 +6,10 @@ PROJECT_URL = 'https://github.com/ludeeus/hacs/'
 CUSTOM_UPDATER_DIR = "{}/custom_components/custom_updater.py"
 ISSUE_URL = "{}issues".format(PROJECT_URL)
 DOMAIN_DATA = "{}_data".format(NAME_SHORT.lower())
-ELEMENT_TYPES = ['card', 'component', 'python_script']
+GHRAW = 'https://raw.githubusercontent.com/'
+ELEMENT_TYPES = ['card', 'component']
+REPO = {'card': 'custom-cards/information/master/repos.json',
+        'component': 'custom-components/information/master/repos.json'}
 
 
 
