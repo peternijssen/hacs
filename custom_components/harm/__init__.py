@@ -2,7 +2,7 @@
 Resource manager for community created resources.
 
 For more details about this component, please refer to the documentation at
-https://github.com/custom-components/harm
+https://github.com/custom-components/hacs
 """
 import logging
 import os.path
@@ -48,11 +48,11 @@ async def refresh_data(hass):
         for element in element_data:
             data[element] = element_data[element]
 
-    harm_data = hass.data.get(DOMAIN_DATA, {})
+    hacs_data = hass.data.get(DOMAIN_DATA, {})
     tasks = []
 
     for element in data:
-        if element not in harm_data:
+        if element not in hacs_data:
             _LOGGER.info('Adding %s', element)
             tasks.append(add_new_element(hass, element))
 

@@ -1,8 +1,8 @@
-"""Constants for HARM"""
+"""Constants for HACS"""
 VERSION = '1.0.0'
-NAME_LONG = "HARM (Home Assistant Resource Manager)"
-NAME_SHORT = "HARM"
-PROJECT_URL = 'https://github.com/ludeeus/harm/'
+NAME_LONG = "HACS (Home Assistant Community Store)"
+NAME_SHORT = "HACS"
+PROJECT_URL = 'https://github.com/ludeeus/hacs/'
 CUSTOM_UPDATER_DIR = "{}/custom_components/custom_updater.py"
 ISSUE_URL = "{}issues".format(PROJECT_URL)
 DOMAIN_DATA = "{}_data".format(NAME_SHORT.lower())
