@@ -3,8 +3,7 @@ import os
 import logging
 import json
 import requests
-from .const import GHRAW, REPO
-from .cons import NAME_SHORT
+from .const import GHRAW, REPO, NAME_SHORT
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -13,9 +12,6 @@ async def init_data_store(datafile):
     """Init data store."""
     if not os.path.exists(datafile):
         try:
-            remove = datafile.split('/')[-1]
-            datafile = datafile.split(remove)[0]
-            os.makedirs(datafile, exist_ok=True)
             with open(
                 datafile, 'w', encoding='utf-8', errors='ignore') as outfile:
                 json.dump({}, outfile, indent=4)
@@ -27,7 +23,7 @@ async def init_data_store(datafile):
     return True
 
 
-async def get_data_from_store(basedir, element_type, element):
+async def get_data_from_store(basedir, element_type, element=None):
     """Get data from element store."""
     name = NAME_SHORT.lower()
     datafile = "{}.{}".format(name, element_type)
@@ -39,12 +35,35 @@ async def get_data_from_store(basedir, element_type, element):
     try:
         with open(datafile, encoding='utf-8', errors='ignore') as localfile:
             load = json.load(localfile)
-            data = load[element]
+            if element:
+                data = load[element]
+            else:
+                data = load
             localfile.close()
     except Exception as error:  # pylint: disable=W0703
         msg = "Could not load data from {} - {}".format(datafile, error)
         _LOGGER.error(msg)
     return data
+
+
+async def write_to_data_store(basedir, element_type, element, elementdata):
+    """Get data from element store."""
+    name = NAME_SHORT.lower()
+    datafile = "{}.{}".format(name, element_type)
+    datafile = "{}/.storage/{}".format(basedir, datafile)
+    data = await get_data_from_store(basedir, element_type)
+    if not element in data:
+        data[element] = {}
+        data[element]['element_type'] = element_type
+    for key in elementdata:
+        data[element][key] = elementdata[key]
+    try:
+        with open(datafile, 'w', encoding='utf-8', errors='ignore') as outfile:
+            json.dump(data, outfile, indent=4)
+            outfile.close()
+    except Exception as error:  # pylint: disable=W0703
+        msg = "Could not write data to {} - {}".format(datafile, error)
+        _LOGGER.error(msg)
 
 
 async def get_remote_data(element_type):
@@ -104,6 +123,8 @@ async def get_local_data(element_type):
         data = {}
         try:
             data = {}
+            data['custom_updater'] = {}
+            data['sensor.youtube'] = {}
         except Exception as error:  # pylint: disable=W0703
             msg = "Could not load data from - {}".format(error)
             _LOGGER.error(msg)

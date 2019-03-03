@@ -11,7 +11,7 @@ class Element(RestoreEntity):
     def __init__(self, hass, name):
         """Set up an element."""
         self.hass = hass
-        self.data = hass.data[DOMAIN_DATA].get(name, {})
+        self.data = {}
         self._name = name
         self._state = None
 
@@ -58,19 +58,14 @@ class Element(RestoreEntity):
     @property
     def installed_version(self):
         """installed_version."""
-        location = 'local'
-        key = 'version'
-        data = self.hass.data[DOMAIN_DATA]
-        value = data.get(location, {}).get(self._name, {}).get(key)
-        return value
+        return self.data.get('version')
 
     @property
     def avaiable_version(self):
         """avaiable_version."""
-        location = 'remote'
-        key = 'version'
-        data = self.hass.data[DOMAIN_DATA]
-        value = data.get(location, {}).get(self._name, {}).get(key)
+        data = self.hass.data[DOMAIN_DATA].get('remote', {})
+        elementdata = data.get(self.element_type, {}).get(self._name, {})
+        value = elementdata.get('version')
         return value
 
     @property
@@ -86,4 +81,8 @@ class Element(RestoreEntity):
     @property
     def state_attributes(self):
         """Return the state attributes of the element."""
-        return self.hass.data[DOMAIN_DATA].get('remote', {}).get(self._name, {})
+        attr = {'element_type': self.element_type,
+                'restart_pending': self.restart_pending,
+                'installed_version': self.installed_version,
+                'avaiable_version': self.avaiable_version}
+        return attr

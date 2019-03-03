@@ -6,22 +6,15 @@ https://github.com/custom-components/hacs
 """
 import logging
 import os.path
-from datetime import timedelta
 import asyncio
-import requests
-import voluptuous as vol
-from aiohttp import web
-from homeassistant.const import EVENT_HOMEASSISTANT_START
-import homeassistant.helpers.config_validation as cv
-from homeassistant.components.http import HomeAssistantView
-from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.entity_component import EntityComponent
 from . const import (
     CUSTOM_UPDATER_DIR, STARTUP, PROJECT_URL, ISSUE_URL,
     CUSTOM_UPDATER_WARNING, NAME_LONG, NAME_SHORT, DOMAIN_DATA,
     ELEMENT_TYPES, VERSION)
 from .element import Element
-from .data import get_remote_data
+from .data import (
+    get_remote_data, get_data_from_store, get_local_data, write_to_data_store)
 
 
 DOMAIN = '{}'.format(NAME_SHORT.lower())
@@ -29,7 +22,7 @@ DOMAIN = '{}'.format(NAME_SHORT.lower())
 _LOGGER = logging.getLogger(__name__)
 
 
-async def async_setup(hass, config):
+async def async_setup(hass, config):  # pylint: disable=unused-argument
     """Set up this component."""
     hass.data[DOMAIN_DATA] = {}
     msg = STARTUP.format(name=NAME_LONG, version=VERSION, issueurl=ISSUE_URL)
@@ -42,36 +35,69 @@ async def async_setup(hass, config):
         _LOGGER.error(msg)
         #return False
 
-    await refresh_data(hass)
+    async def reload_service(call):  # pylint: disable=unused-argument
+        """Reload remote and stored data."""
+        _LOGGER.info("Reloading remote and stored data")
+        await refresh_data(hass)
+
+    hass.services.async_register(DOMAIN, 'reload', reload_service)
+    await startup_background_tasks(hass)
     return True
 
 
-async def refresh_data(hass):
+async def refresh_data(hass, runtype=None):  # pylint: disable=unused-argument
     """Refresh data."""
-    data = {}
-    data['remote'] = {}
-    for element_type in ELEMENT_TYPES:
-        element_data = await get_remote_data(element_type)
-        for element in element_data:
-            data[element] = element_data[element]
-    hass.data[DOMAIN_DATA]['remote'] = data
-
-    hacs_data = hass.data.get(DOMAIN_DATA, {})
+    config_dir = hass.config.path()
     tasks = []
+    async def refresh_remote_data():
+        """Refresh remote data."""
+        hass.data[DOMAIN_DATA]['remote'] = {}
+        for element_type in ELEMENT_TYPES:
+            elementdata = await get_remote_data(element_type)
+            hass.data[DOMAIN_DATA]['remote'][element_type] = elementdata
 
-    for element in data:
-        if element not in hacs_data:
-            _LOGGER.info('Adding %s', element)
-            tasks.append(add_new_element(hass, element))
+    async def refresh_stored_data():
+        """Refresh stored data."""
+        for element_type in ELEMENT_TYPES:
+            stored_data = await get_data_from_store(config_dir, element_type)
+            for element in stored_data:
+                hass.data[DOMAIN_DATA][element] = stored_data[element]
 
-    if tasks:
-        for task in asyncio.as_completed(tasks):
-            await task
-    return data
+    tasks.append(refresh_remote_data())
+    tasks.append(refresh_stored_data())
+
+    for task in asyncio.as_completed(tasks):
+        await task
 
 
-async def add_new_element(hass, name):
+async def add_new_element(hass, name, hacs_data):
     """Add new element to Home Assistant."""
     component = EntityComponent(_LOGGER, DOMAIN, hass)
-    await component.async_add_entities([Element(hass, name)])
-    hass.data[DOMAIN_DATA][name] = {}
+    hass.data[DOMAIN_DATA][name] = hacs_data
+    await component.async_add_entities([Element(hass, name)], True)
+
+
+async def startup_background_tasks(hass):
+    """Run background_tasks."""
+    tasks = []
+    tasks.append(refresh_data(hass))
+    for element_type in ELEMENT_TYPES:
+        remotedata = await get_remote_data(element_type)
+        localdata = await get_local_data(element_type)
+        storeddata = await get_data_from_store(
+            hass.config.path(), element_type)
+        for element in remotedata:
+            if element in localdata:
+                if element in storeddata:
+                    elementdata = storeddata[element]
+                else:
+                    elementdata = {}
+                tasks.append(add_new_element(hass, element, elementdata))
+                elementdata = {'restart_pending': False}
+                tasks.append(
+                    write_to_data_store(
+                        hass.config.path(), element_type, element,
+                        elementdata))
+
+    for task in asyncio.as_completed(tasks):
+        await task
