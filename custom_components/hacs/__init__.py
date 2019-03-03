@@ -6,7 +6,6 @@ https://github.com/custom-components/hacs
 """
 import logging
 import os.path
-import asyncio
 from datetime import timedelta
 from homeassistant.const import EVENT_HOMEASSISTANT_START
 from homeassistant.helpers.entity_component import EntityComponent
