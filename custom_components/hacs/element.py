@@ -2,23 +2,26 @@
 import logging
 from homeassistant.helpers.restore_state import RestoreEntity
 from .const import DOMAIN_DATA
+from .data import get_data_from_store
 
 _LOGGER = logging.getLogger(__name__)
 
 
 class Element(RestoreEntity):
     """Element Class"""
-    def __init__(self, hass, name):
+    def __init__(self, hass, element_type, element):
         """Set up an element."""
         self.hass = hass
         self.data = {}
-        self._name = name
+        self._name = element
+        self._element_type = element_type
         self._state = None
 
     async def async_update(self):
         """Update entity"""
         _LOGGER.info('Updating %s', self._name)
-        self.data = self.hass.data[DOMAIN_DATA].get(self._name, {})
+        self.data = await get_data_from_store(
+            self.hass.config.path(), self.element_type, self._name)
         await self.get_state_value()  # Update state
 
     async def get_state_value(self):
@@ -48,7 +51,7 @@ class Element(RestoreEntity):
     @property
     def element_type(self):
         """element_type."""
-        return self.data.get('element_type')
+        return self._element_type
 
     @property
     def restart_pending(self):

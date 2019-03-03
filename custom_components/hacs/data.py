@@ -2,8 +2,10 @@
 import os
 import logging
 import json
+import sys
 import requests
 from .const import GHRAW, REPO, NAME_SHORT
+from .helpers import run_tasks
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -42,7 +44,7 @@ async def get_data_from_store(basedir, element_type, element=None):
             localfile.close()
     except Exception as error:  # pylint: disable=W0703
         msg = "Could not load data from {} - {}".format(datafile, error)
-        _LOGGER.error(msg)
+        _LOGGER.debug(msg)
     return data
 
 
@@ -54,7 +56,6 @@ async def write_to_data_store(basedir, element_type, element, elementdata):
     data = await get_data_from_store(basedir, element_type)
     if not element in data:
         data[element] = {}
-        data[element]['element_type'] = element_type
     for key in elementdata:
         data[element][key] = elementdata[key]
     try:
@@ -63,7 +64,7 @@ async def write_to_data_store(basedir, element_type, element, elementdata):
             outfile.close()
     except Exception as error:  # pylint: disable=W0703
         msg = "Could not write data to {} - {}".format(datafile, error)
-        _LOGGER.error(msg)
+        _LOGGER.debug(msg)
 
 
 async def get_remote_data(element_type):
@@ -78,7 +79,7 @@ async def get_remote_data(element_type):
             data = resp
         except Exception as error:  # pylint: disable=W0703
             msg = "Could not load data from {} - {}".format(repo, error)
-            _LOGGER.error(msg)
+            _LOGGER.debug(msg)
         return data
 
     async def components():
@@ -90,7 +91,7 @@ async def get_remote_data(element_type):
             data = resp
         except Exception as error:  # pylint: disable=W0703
             msg = "Could not load data from {} - {}".format(repo, error)
-            _LOGGER.error(msg)
+            _LOGGER.debug(msg)
         return data
 
 
@@ -99,7 +100,7 @@ async def get_remote_data(element_type):
     elif element_type == 'component':
         return_value = await components()
     else:
-        _LOGGER.error('element_type %s is not valid', element_type)
+        _LOGGER.debug('element_type %s is not valid', element_type)
 
     return return_value
 
@@ -115,7 +116,7 @@ async def get_local_data(element_type):
             data = {}
         except Exception as error:  # pylint: disable=W0703
             msg = "Could not load data - {}".format(error)
-            _LOGGER.error(msg)
+            _LOGGER.debug(msg)
         return data
 
     async def components():
@@ -127,7 +128,7 @@ async def get_local_data(element_type):
             data['sensor.youtube'] = {}
         except Exception as error:  # pylint: disable=W0703
             msg = "Could not load data from - {}".format(error)
-            _LOGGER.error(msg)
+            _LOGGER.debug(msg)
         return data
 
     if element_type == 'card':
@@ -138,3 +139,57 @@ async def get_local_data(element_type):
         _LOGGER.error('element_type %s is not valid', element_type)
 
     return return_value
+
+
+async def init_local_component_version(hass):
+    """Initialize local version."""
+    remote = await get_remote_data('component')
+
+    tasks = []
+
+    async def set_version(element, version):
+        """Set version."""
+        _LOGGER.debug("Setting version '%s' for '%s'", version, element)
+        elementdata = {'version': version}
+        await write_to_data_store(
+            hass.config.path(), 'component', element, elementdata)
+
+    async def get_version(element, localpath):
+        """Get local version"""
+        return_value = None
+        if '.' in element:
+            element = "{}.{}".format(
+                element.split('.')[1], element.split('.')[0])
+        if os.path.isfile(localpath):
+            modules = list(sys.modules)
+            for module in modules:
+                package = "custom_components.{}".format(element)
+                if package == module:
+                    try:
+                        key = "__version__"
+                        return_value = getattr(
+                            __import__(package, fromlist=[key]), key)
+                    except Exception as err:  # pylint: disable=W0703
+                        _LOGGER.debug(err)
+                    if return_value is None:
+                        try:
+                            key = "VERSION"
+                            return_value = getattr(
+                                __import__(package, fromlist=[key]), key)
+                        except Exception as err:  # pylint: disable=W0703
+                            _LOGGER.debug(err)
+        return return_value
+
+    for element in remote:
+        stored = await get_data_from_store(
+            hass.config.path(), 'component', element)
+        version = stored.get('version')
+        if version is not None:
+            continue
+        localfile = "{}{}".format(
+            hass.config.path(), remote[element]['local_location'])
+        version = await get_version(element, localfile)
+        if version is not None:
+            tasks.append(set_version(element, version))
+
+    await run_tasks(tasks)
