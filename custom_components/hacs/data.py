@@ -154,41 +154,42 @@ async def init_local_component_version(hass):
         await write_to_data_store(
             hass.config.path(), 'component', element, elementdata)
 
-    async def get_version(element, localpath):
+    async def get_version(element):
         """Get local version"""
         return_value = None
         if '.' in element:
             element = "{}.{}".format(
                 element.split('.')[1], element.split('.')[0])
-        if os.path.isfile(localpath):
-            modules = list(sys.modules)
-            for module in modules:
-                package = "custom_components.{}".format(element)
-                if package == module:
+        modules = list(sys.modules)
+        for module in modules:
+            package = "custom_components.{}".format(element)
+            if package == module:
+                try:
+                    key = "__version__"
+                    return_value = getattr(
+                        __import__(package, fromlist=[key]), key)
+                except Exception as err:  # pylint: disable=W0703
+                    _LOGGER.debug(err)
+                if return_value is None:
                     try:
-                        key = "__version__"
+                        key = "VERSION"
                         return_value = getattr(
                             __import__(package, fromlist=[key]), key)
                     except Exception as err:  # pylint: disable=W0703
                         _LOGGER.debug(err)
-                    if return_value is None:
-                        try:
-                            key = "VERSION"
-                            return_value = getattr(
-                                __import__(package, fromlist=[key]), key)
-                        except Exception as err:  # pylint: disable=W0703
-                            _LOGGER.debug(err)
         return return_value
 
     for element in remote:
+        localfile = "{}{}".format(
+            hass.config.path(), remote[element]['local_location'])
+        if not os.path.isfile(localfile):
+            continue
         stored = await get_data_from_store(
             hass.config.path(), 'component', element)
         version = stored.get('version')
         if version is not None:
             continue
-        localfile = "{}{}".format(
-            hass.config.path(), remote[element]['local_location'])
-        version = await get_version(element, localfile)
+        version = await get_version(element)
         if version is not None:
             tasks.append(set_version(element, version))
 
