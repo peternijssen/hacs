@@ -34,7 +34,7 @@ async def async_setup(hass, config):  # pylint: disable=unused-argument
     msg = STARTUP.format(name=NAME_LONG, version=VERSION, issueurl=ISSUE_URL)
     _LOGGER.info(msg)
     config_dir = hass.config.path()
-    github_token = "7b69517f6eb44c879accb2c7f19b85ea32a26f7f"
+    github_token = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
     commander = HacsCommander(hass, github_token)
 
     if os.path.exists(CUSTOM_UPDATER_DIR.format(config_dir)):
