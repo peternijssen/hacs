@@ -1,196 +1,160 @@
 """Local data handling."""
-import os
 import logging
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
+import async_timeout
 import json
-import sys
-import requests
-from .const import GHRAW, REPO, NAME_SHORT
-from .helpers import run_tasks
+import os
+import asyncio
+import shutil
+from .const import STORENAME, DOMAIN_DATA, VERSION
+from .element import Element
 
 _LOGGER = logging.getLogger(__name__)
 
-
-async def init_data_store(datafile):
-    """Init data store."""
-    if not os.path.exists(datafile):
-        try:
-            with open(
-                datafile, 'w', encoding='utf-8', errors='ignore') as outfile:
-                json.dump({}, outfile, indent=4)
-                outfile.close()
-        except Exception as error:  # pylint: disable=W0703
-            msg = "Could crate file {} - {}".format(datafile, error)
-            _LOGGER.error(msg)
-            return False
-    return True
-
-
-async def get_data_from_store(basedir, element_type, element=None):
+async def get_data_from_store(basedir):
     """Get data from element store."""
-    name = NAME_SHORT.lower()
-    datafile = "{}.{}".format(name, element_type)
-    datafile = "{}/.storage/{}".format(basedir, datafile)
-    exist = await init_data_store(datafile)
-    data = {}
-    if not exist:
-        return data
+    datastore = "{}/.storage/{}".format(basedir, STORENAME)
+    elements = {}
+    returndata = {}
     try:
-        with open(datafile, encoding='utf-8', errors='ignore') as localfile:
-            load = json.load(localfile)
-            if element:
-                data = load[element]
-            else:
-                data = load
+        with open(datastore, encoding='utf-8', errors='ignore') as localfile:
+            data = json.load(localfile)
             localfile.close()
+        returndata['repos'] = {}
+        returndata['repos']['integration'] = data['repos'].get('integration', [])
+        returndata['repos']['plugin'] = data['repos'].get('plugin', [])
+        returndata['hacs'] = data.get('hacs', {"local": VERSION, "remote": None})
+        for element in data['elements']:
+            edata = Element(data['elements'][element]['element_type'], element)
+            for entry in data['elements'][element]:
+                edata.__setattr__(entry, data['elements'][element][entry])
+            edata.__setattr__('restart_pending', False)
+            elements[element] = edata
+        returndata['elements'] = elements
     except Exception as error:  # pylint: disable=W0703
-        msg = "Could not load data from {} - {}".format(datafile, error)
+        msg = "Could not load data from {} - {}".format(datastore, error)
         _LOGGER.debug(msg)
-    return data
+    return returndata
 
 
-async def write_to_data_store(basedir, element_type, element, elementdata):
+async def write_to_data_store(basedir, output):
     """Get data from element store."""
-    name = NAME_SHORT.lower()
-    datafile = "{}.{}".format(name, element_type)
-    datafile = "{}/.storage/{}".format(basedir, datafile)
-    data = await get_data_from_store(basedir, element_type)
-    if not element in data:
-        data[element] = {}
-    for key in elementdata:
-        data[element][key] = elementdata[key]
+    _LOGGER.debug("Writing to datastore.")
+    datastore = "{}/.storage/{}".format(basedir, STORENAME)
+    outdata = {}
+    outdata['hacs'] = output['hacs']
+    outdata['repos'] = output['repos']
+    outdata['elements'] = {}
+    for element in output['elements']:
+        edata = {}
+        for attribute, value in output['elements'][element].__dict__.items():
+            edata[attribute] = value
+        outdata['elements'][output['elements'][element].element_id] = edata
     try:
-        with open(datafile, 'w', encoding='utf-8', errors='ignore') as outfile:
-            json.dump(data, outfile, indent=4)
+        with open(datastore, 'w', encoding='utf-8', errors='ignore') as outfile:
+            json.dump(outdata, outfile, indent=4)
             outfile.close()
     except Exception as error:  # pylint: disable=W0703
-        msg = "Could not write data to {} - {}".format(datafile, error)
+        msg = "Could not write data to {} - {}".format(datastore, error)
         _LOGGER.debug(msg)
 
+async def remove_integration(hass, integration):
+    """Remove integration"""
+    integrationdir = "{}/custom_components/{}".format(hass.config.path(), integration.element_id)
+    if os.path.exists(integrationdir):
+        shutil.rmtree(integrationdir)
+        while os.path.exists(integrationdir):
+            _LOGGER.debug("%s still exist, waiting 1s and checking again.", integrationdir)
+            await asyncio.sleep(1)
 
-async def get_remote_data(element_type):
-    """Get remote data."""
-    return_value = {}
-    async def cards():
-        """Get remote cards."""
-        data = {}
-        try:
-            repo = "{}{}".format(GHRAW, REPO['card'])
-            resp = requests.get(repo).json()
-            data = resp
-        except Exception as error:  # pylint: disable=W0703
-            msg = "Could not load data from {} - {}".format(repo, error)
-            _LOGGER.debug(msg)
-        return data
+    # Update hass.data
+    integration.installed_version = None
+    integration.isinstalled = False
+    integration.restart_pending = True
+    hass.data[DOMAIN_DATA]['elements'][integration.element_id] = integration
 
-    async def components():
-        """Get remote components."""
-        data = {}
-        try:
-            repo = "{}{}".format(GHRAW, REPO['component'])
-            resp = requests.get(repo).json()
-            data = resp
-        except Exception as error:  # pylint: disable=W0703
-            msg = "Could not load data from {} - {}".format(repo, error)
-            _LOGGER.debug(msg)
-        return data
+async def download_integration(hass, integration):
+    """Download integration"""
+    commander = hass.data[DOMAIN_DATA]['commander']
+    git = commander.git
+    integrationdir = "{}/custom_components/{}".format(hass.config.path(), integration.element_id)
+    try:
+        if os.path.exists(integrationdir):
+            _LOGGER.debug("%s exist, deleting current content before download.", integrationdir)
+            await remove_integration(hass, integration)
+        os.mkdir(integrationdir)
+        repo = git.get_repo(integration.repo)
+        ref = "tags/{}".format(integration.avaiable_version)
+        remotedir = repo.get_dir_contents(repo.get_dir_contents("custom_components", ref)[0].path)
+        _LOGGER.debug(str(list(remotedir)))
+        for file in remotedir:
+            _LOGGER.debug("Downloading %s", file.path)
+            filecontent = await async_download_file(hass, file.download_url)
+            local_file_path = "{}/{}".format(integrationdir, file.name)
+            with open(local_file_path, 'w', encoding='utf-8', errors='ignore') as outfile:
+                outfile.write(filecontent)
+                outfile.close()
 
+        # Update hass.data
+        integration.installed_version = integration.avaiable_version
+        integration.isinstalled = True
+        integration.restart_pending = True
+        hass.data[DOMAIN_DATA]['elements'][integration.element_id] = integration
+        await write_to_data_store(hass.config.path(), hass.data[DOMAIN_DATA])
 
-    if element_type == 'card':
-        return_value = await cards()
-    elif element_type == 'component':
-        return_value = await components()
-    else:
-        _LOGGER.debug('element_type %s is not valid', element_type)
-
-    return return_value
-
-
-async def get_local_data(element_type):
-    """Get local data."""
-    return_value = {}
-
-    async def cards():
-        """Get local cards."""
-        data = {}
-        try:
-            data = {}
-        except Exception as error:  # pylint: disable=W0703
-            msg = "Could not load data - {}".format(error)
-            _LOGGER.debug(msg)
-        return data
-
-    async def components():
-        """Get local components."""
-        data = {}
-        try:
-            data = {}
-            data['custom_updater'] = {}
-            data['sensor.youtube'] = {}
-        except Exception as error:  # pylint: disable=W0703
-            msg = "Could not load data from - {}".format(error)
-            _LOGGER.debug(msg)
-        return data
-
-    if element_type == 'card':
-        return_value = await cards()
-    elif element_type == 'component':
-        return_value = await components()
-    else:
-        _LOGGER.error('element_type %s is not valid', element_type)
-
-    return return_value
+    except Exception as error:
+        _LOGGER.error(error)
 
 
-async def init_local_component_version(hass):
-    """Initialize local version."""
-    remote = await get_remote_data('component')
+async def download_hacs(hass):
+    """Download hacs"""
+    commander = hass.data[DOMAIN_DATA]['commander']
+    git = commander.git
+    integrationdir = "{}/custom_components/hacs".format(hass.config.path())
+    try:
+        if os.path.exists(integrationdir):
+            _LOGGER.debug("%s exist, deleting current content before download.", integrationdir)
+            shutil.rmtree(integrationdir)
+            while os.path.exists(integrationdir):
+                _LOGGER.debug("%s still exist, waiting 1s and checking again.", integrationdir)
+        os.mkdir(integrationdir)
+        os.mkdir("{}/flies".format(integrationdir))
+        repo = git.get_repo("custom-components/hacs")
+        ref = "tags/{}".format(hass.data[DOMAIN_DATA]['hacs']['remote'])
+        remotedir = repo.get_dir_contents("custom_components/hacs", ref)
+        _LOGGER.debug(str(list(remotedir)))
+        for file in remotedir:
+            if file == "files":
+                continue
+            _LOGGER.debug("Downloading %s", file.path)
+            filecontent = await async_download_file(hass, file.download_url)
+            local_file_path = "{}/{}".format(integrationdir, file.name)
+            with open(local_file_path, 'w', encoding='utf-8', errors='ignore') as outfile:
+                outfile.write(filecontent)
+                outfile.close()
+        remotedir = repo.get_dir_contents("custom_components/hacs/files", ref)
+        _LOGGER.debug(str(list(remotedir)))
+        for file in remotedir:
+            _LOGGER.debug("Downloading %s", file.path)
+            filecontent = await async_download_file(hass, file.download_url)
+            local_file_path = "{}/{}".format(integrationdir, file.name)
+            with open(local_file_path, 'w', encoding='utf-8', errors='ignore') as outfile:
+                outfile.write(filecontent)
+                outfile.close()
 
-    tasks = []
+        # Update hass.data
+        hass.data[DOMAIN_DATA]['hacs']['local'] = hass.data[DOMAIN_DATA]['hacs']['remote']
+        hass.data[DOMAIN_DATA]['hacs']['restart_pending'] = True
+        await write_to_data_store(hass.config.path(), hass.data[DOMAIN_DATA])
 
-    async def set_version(element, version):
-        """Set version."""
-        _LOGGER.debug("Setting version '%s' for '%s'", version, element)
-        elementdata = {'version': version}
-        await write_to_data_store(
-            hass.config.path(), 'component', element, elementdata)
+    except Exception as error:
+        _LOGGER.error(error)
 
-    async def get_version(element):
-        """Get local version"""
-        return_value = None
-        if '.' in element:
-            element = "{}.{}".format(
-                element.split('.')[1], element.split('.')[0])
-        modules = list(sys.modules)
-        for module in modules:
-            package = "custom_components.{}".format(element)
-            if package == module:
-                try:
-                    key = "__version__"
-                    return_value = getattr(
-                        __import__(package, fromlist=[key]), key)
-                except Exception as err:  # pylint: disable=W0703
-                    _LOGGER.debug(err)
-                if return_value is None:
-                    try:
-                        key = "VERSION"
-                        return_value = getattr(
-                            __import__(package, fromlist=[key]), key)
-                    except Exception as err:  # pylint: disable=W0703
-                        _LOGGER.debug(err)
-        return return_value
 
-    for element in remote:
-        localfile = "{}{}".format(
-            hass.config.path(), remote[element]['local_location'])
-        if not os.path.isfile(localfile):
-            continue
-        stored = await get_data_from_store(
-            hass.config.path(), 'component', element)
-        version = stored.get('version')
-        if version is not None:
-            continue
-        version = await get_version(element)
-        if version is not None:
-            tasks.append(set_version(element, version))
-
-    await run_tasks(tasks)
+async def async_download_file(hass, url):
+    """Download files."""
+    result = None
+    with async_timeout.timeout(10, loop=hass.loop):
+        request = await async_get_clientsession(hass).get(url)
+        result = await request.text()
+    return result
