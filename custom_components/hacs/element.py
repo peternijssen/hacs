@@ -16,4 +16,5 @@ class Element():
         self.example_config = None
         self.example_image = None
         self.manifest = None
+        self.remote_dir_location = None
         self.authors = []

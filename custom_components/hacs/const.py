@@ -2,16 +2,13 @@
 VERSION = '0.1.0'
 NAME_LONG = "HACS (Home Assistant Community Store)"
 NAME_SHORT = "HACS"
+STORENAME = "hacs"
 PROJECT_URL = 'https://github.com/custom_components/hacs/'
 CUSTOM_UPDATER_DIR = "{}/custom_components/custom_updater.py"
 ISSUE_URL = "{}issues".format(PROJECT_URL)
 DOMAIN_DATA = "{}_data".format(NAME_SHORT.lower())
-GHRAW = 'https://raw.githubusercontent.com/'
-STORENAME = 'hacs'
 SKIP = ['custom-cards/custom-card-helpers', 'custom-cards/information', 'custom-components/hacs', 'custom-components/blueprint']
 ELEMENT_TYPES = ['integration', 'plugin']
-REPO = {'card': 'custom-cards/information/master/repos.json',
-        'component': 'custom-components/information/master/repos.json'}
 IFRAME = {
         "title": "Community",
         "icon": "mdi:alpha-c-box",
@@ -19,15 +16,6 @@ IFRAME = {
         "path": "community",
         "require_admin": True
 }
-
-
-
-
-
-
-
-
-
 
 
 

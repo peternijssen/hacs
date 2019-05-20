@@ -1,5 +1,5 @@
 """
-Resource manager for community created resources.
+Custom element manager for community created elements.
 
 For more details about this component, please refer to the documentation at
 https://github.com/custom-components/hacs
@@ -13,14 +13,13 @@ from datetime import timedelta
 from homeassistant.const import EVENT_HOMEASSISTANT_START
 from homeassistant.helpers.entity_component import EntityComponent
 from homeassistant.helpers.event import async_track_time_interval
-from . const import (
+from custom_components.hacs.const import (
     CUSTOM_UPDATER_DIR, STARTUP, PROJECT_URL, ISSUE_URL,
     CUSTOM_UPDATER_WARNING, NAME_LONG, NAME_SHORT, DOMAIN_DATA,
     ELEMENT_TYPES, VERSION, IFRAME, SKIP)
-from .element import Element
-from .data import get_data_from_store, write_to_data_store
-from .files.overview import CommunityOverview, CommunityElementView, CommunityStoreView, CommunitySettingsView, CommunityAPI
-
+from custom_components.hacs.element import Element
+from custom_components.hacs.handler.storage import get_data_from_store, write_to_data_store
+from custom_components.hacs.frontend.views import CommunityOverview, CommunityElement, CommunityStore, CommunitySettings, CommunityAPI
 
 DOMAIN = '{}'.format(NAME_SHORT.lower())
 
@@ -34,7 +33,7 @@ async def async_setup(hass, config):  # pylint: disable=unused-argument
     msg = STARTUP.format(name=NAME_LONG, version=VERSION, issueurl=ISSUE_URL)
     _LOGGER.info(msg)
     config_dir = hass.config.path()
-    github_token = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    github_token = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
     commander = HacsCommander(hass, github_token)
 
     if os.path.exists(CUSTOM_UPDATER_DIR.format(config_dir)):
@@ -49,9 +48,9 @@ async def async_setup(hass, config):  # pylint: disable=unused-argument
 
     # Register the views
     hass.http.register_view(CommunityOverview(hass))
-    hass.http.register_view(CommunityElementView(hass))
-    hass.http.register_view(CommunityStoreView(hass))
-    hass.http.register_view(CommunitySettingsView(hass))
+    hass.http.register_view(CommunityElement(hass))
+    hass.http.register_view(CommunityStore(hass))
+    hass.http.register_view(CommunitySettings(hass))
     hass.http.register_view(CommunityAPI(hass))
 
 
@@ -167,6 +166,7 @@ class HacsCommander:
             _LOGGER.debug(error)
 
         element.name = manifest['name']
+        element.authors = manifest['codeowners']
         element.avaiable_version = list(repo.get_releases())[0].tag_name
         element.description = repo.description
         element.repo = repo_name
