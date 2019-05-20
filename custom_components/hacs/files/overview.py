@@ -9,7 +9,7 @@ from aiohttp import web
 from homeassistant.components.http import HomeAssistantView
 
 from ..const import DOMAIN_DATA, NO_ELEMENTS
-from ..data import download_integration, remove_integration, write_to_data_store
+from ..data import download_integration, remove_integration, write_to_data_store, download_plugin, download_hacs
 from .ui_elements import css, ui_header, ui_overview_card, ui_element_view, button
 
 _LOGGER = logging.getLogger(__name__)
@@ -126,6 +126,8 @@ class CommunitySettingsView(HomeAssistantView):
         content += await css()
         content += await ui_header()
 
+        content += "<div class='container''>"
+
         if self.hass.data[DOMAIN_DATA]['hacs'].get('pending_restart'):
             content += """
                 <div class="row">
@@ -160,8 +162,6 @@ class CommunitySettingsView(HomeAssistantView):
                     </div>
                 </div>
             """.format(self.hass.data[DOMAIN_DATA]['hacs']['local'], self.hass.data[DOMAIN_DATA]['hacs']['remote'])
-
-        content += "<div class='container''>"
 
         # Integration URL's
         content += """
@@ -248,33 +248,46 @@ class CommunityAPI(HomeAssistantView):
         if action == 'reload':
             await self.hass.data[DOMAIN_DATA]['commander'].background_tasks()
             raise web.HTTPFound('/community_settings')
+
+        elif element == 'hacs' and action == 'upgrade':
+            await download_hacs(self.hass)
+            raise web.HTTPFound('/community_settings')
+
         elif action in ['install', 'upgrade']:
             element = self.hass.data[DOMAIN_DATA]['elements'][element]
             if element.element_type == 'integration':
                 await download_integration(self.hass, element)
+            elif element.element_type == 'plugin':
+                await download_plugin(self.hass, element)
             raise web.HTTPFound('/community_element/' + element.element_id)
+
         elif element == 'integration_url_delete':
             self.hass.data[DOMAIN_DATA]['repos']['integration'].remove(action)
             await write_to_data_store(self.hass.config.path(), self.hass.data[DOMAIN_DATA])
             raise web.HTTPFound('/community_settings')
+
         elif element == 'plugin_url_delete':
             self.hass.data[DOMAIN_DATA]['repos']['plugin'].remove(action)
             await write_to_data_store(self.hass.config.path(), self.hass.data[DOMAIN_DATA])
             raise web.HTTPFound('/community_settings')
+
         elif element == 'integration_url':
             repo = request.query_string.split('=')[-1]
             if 'http' in repo:
                 repo = repo.split('https://github.com/')[-1]
             if repo != "":
                 self.hass.data[DOMAIN_DATA]['repos']['integration'].append(repo)
+                await self.hass.data[DOMAIN_DATA]['commander'].load_integrations_from_git(repo)
                 await write_to_data_store(self.hass.config.path(), self.hass.data[DOMAIN_DATA])
             raise web.HTTPFound('/community_settings')
+
         elif element == 'plugin_url':
             repo = request.query_string.split('=')[-1]
             if 'http' in repo:
                 repo = repo.split('https://github.com/')[-1]
             if repo != "":
                 self.hass.data[DOMAIN_DATA]['repos']['plugin'].append(repo)
+                await self.hass.data[DOMAIN_DATA]['commander'].load_plugins_from_git(repo)
                 await write_to_data_store(self.hass.config.path(), self.hass.data[DOMAIN_DATA])
             raise web.HTTPFound('/community_settings')
 

@@ -34,7 +34,7 @@ async def async_setup(hass, config):  # pylint: disable=unused-argument
     msg = STARTUP.format(name=NAME_LONG, version=VERSION, issueurl=ISSUE_URL)
     _LOGGER.info(msg)
     config_dir = hass.config.path()
-    github_token = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    github_token = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
     commander = HacsCommander(hass, github_token)
 
     if os.path.exists(CUSTOM_UPDATER_DIR.format(config_dir)):
@@ -171,6 +171,10 @@ class HacsCommander:
         element.description = repo.description
         element.repo = repo_name
 
+        # Prettiify
+        if element.description is None:
+            element.description = ""
+
 
         # Save it back to hass.data
         self.hass.data[DOMAIN_DATA]['elements'][manifest['domain']] = element
@@ -181,7 +185,7 @@ class HacsCommander:
         if repo_name in self.skip:
             return
         _LOGGER.debug("Loading from GIT")
-        exists = True
+        exists = False
         releases = []
         try:
             repo = self.git.get_repo(repo_name)
@@ -207,6 +211,31 @@ class HacsCommander:
 
         ref = "tags/{}".format(list(repo.get_releases())[0].tag_name)
 
+
+        # Try to find files
+        files = []
+        # Try dist
+        try:
+            remotedir = repo.get_dir_contents("dist", ref)
+            for file in list(remotedir):
+                if file.name.endswith('.js'):
+                    files.append(file)
+        except Exception as error:
+            _LOGGER.debug(error)
+
+        # Try root
+        try:
+
+            remotedir = repo.get_dir_contents("", ref)
+            for file in list(remotedir):
+                if file.name.endswith('.js'):
+                    files.append(file)
+        except Exception as error:
+            _LOGGER.debug(error)
+
+        if len(files) != 0:
+            exists = True
+
         if not exists:
             _LOGGER.error("Can't get data from %s", repo_name)
             self.skip.append(repo_name)
@@ -224,6 +253,10 @@ class HacsCommander:
         element.avaiable_version = list(repo.get_releases())[0].tag_name
         element.description = repo.description
         element.repo = repo_name
+
+        # Prettiify
+        if element.description is None:
+            element.description = ""
 
         # Get example config
         try:
@@ -329,3 +362,11 @@ class HacsCommander:
             self.hass.data[DOMAIN_DATA]['elements'] = returndata['elements']
             self.hass.data[DOMAIN_DATA]['repos'] = returndata['repos']
             self.hass.data[DOMAIN_DATA]['hacs'] = returndata['hacs']
+
+        # Reset restart_pending flag
+        self.hass.data[DOMAIN_DATA]['hacs']['restart_pending'] = False
+        for element in self.hass.data[DOMAIN_DATA]['elements']:
+            element = self.hass.data[DOMAIN_DATA]['elements'][element]
+            element.restart_pending = False
+            self.hass.data[DOMAIN_DATA]['elements'][element.element_id] = element
+        await write_to_data_store(self.hass.config.path(), self.hass.data[DOMAIN_DATA])

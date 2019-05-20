@@ -95,7 +95,7 @@ async def ui_element_view(element):
 
     if element.installed_version is not None:
         installed_version = """</br>
-              <p>installed version: {}</p>
+              <p>Installed version: {}</p>
               """.format(element.installed_version)
     else:
         installed_version = ""
@@ -111,8 +111,9 @@ async def ui_element_view(element):
           <div class="card blue-grey darken-1">
             <div class="card-content white-text">
               <span class="card-title">{name}</span>
-              <p>{description}</p>
+              <p>{description}</p></br>
               {installed}
+              <p>Available version: {available}</p>
               {example_image}
               {example_config}
             </div>
@@ -131,6 +132,7 @@ async def ui_element_view(element):
         example_config=example_config,
         name=str(element.name),
         installed=str(installed_version),
+        available=str(element.avaiable_version),
         description=str(element.description),
         element=str(element.element_id)
     )
