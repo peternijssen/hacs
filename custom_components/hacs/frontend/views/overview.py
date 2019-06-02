@@ -29,8 +29,7 @@ class HacsOverviewView(HacsViewBase):
                     content += self.const.NO_ELEMENTS
 
             else:
-                for repository in self.repositories:
-                    repository = self.repositories[repository]
+                for repository in self.repositories_list_name:
 
                     if not repository.track or repository.hide or not repository.installed:
                         continue
